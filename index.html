@@ -8,16 +8,31 @@ button{min-height:44px;border:0;border-radius:10px;padding:0 14px;font-weight:70
 .pill{border-radius:99px;padding:2px 10px;font-weight:700;font-size:14px}.pendiente{background:#fef3c7;color:#92400e}.aprobada{background:#ccfbf1;color:#134e4a}
 .rechazada,.desactivada{background:#ffe4e6;color:#9f1239}.m{color:#5b6b69;font-size:14px}.f{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
 </style></head><body><main><h1>RMSOrders · Licencias</h1>
-<div id="login"><input id="pw" type="password" placeholder="Tu clave de administración"> <button class="ok" onclick="go()">Entrar</button></div>
+<div id="login"><input id="pw" type="password" autocapitalize="none" autocorrect="off" placeholder="Tu clave"> <button class="ok" onclick="go()">Entrar</button>
+<p class="m">Se queda guardada en este celular: la escribes una sola vez.</p></div>
+<p id="out" hidden><button class="gr" onclick="salir()">Salir (olvidar la clave en este celular)</button></p>
 <p id="err" class="no" hidden></p><div id="list"></div>
 <script>
-let pw = sessionStorage.getItem('pw') || ''
+const store = { get: () => { try { return localStorage.getItem('pw') || '' } catch { return '' } }, set: (v) => { try { v ? localStorage.setItem('pw', v) : localStorage.removeItem('pw') } catch {} } }
+let pw = store.get()
 const base = "https://vjhlmonruyonnpwmxyyu.supabase.co/functions/v1/quick-responder"
-const call = (p, body) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin': pw }, body: JSON.stringify(body || {}) }).then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error); return d })
+// Si Supabase contesta "Clave incorrecta" desde una copia vieja de la función, trata otra vez (una vez más)
+async function call(p, body, tries = 2) {
+  const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin': pw }, body: JSON.stringify(body || {}) })
+  const d = await r.json()
+  if (r.status === 401 && tries > 1) { await new Promise((ok) => setTimeout(ok, 1500)); return call(p, body, tries - 1) }
+  if (!r.ok) throw new Error(d.error)
+  return d
+}
 const e = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';')
 const d = (s) => s ? new Date(s).toLocaleString('es-PR', { timeZone: 'America/Puerto_Rico' }) : '—'
 function plus(m) { const x = new Date(); x.setMonth(x.getMonth() + m); return x.toISOString().slice(0, 10) }
-async function go() { pw = pw || document.getElementById('pw').value; try { const l = await call('/admin/lista'); sessionStorage.setItem('pw', pw); document.getElementById('login').hidden = true; show(l) } catch (e) { pw = ''; err(e.message) } }
+async function go() {
+  pw = pw || document.getElementById('pw').value.trim()
+  try { const l = await call('/admin/lista'); store.set(pw); document.getElementById('login').hidden = true; document.getElementById('out').hidden = false; document.getElementById('err').hidden = true; show(l) }
+  catch (e) { pw = ''; store.set(''); err(e.message) }
+}
+function salir() { store.set(''); location.reload() }
 function err(m) { const e = document.getElementById('err'); e.textContent = m; e.hidden = false }
 function show(l) {
   document.getElementById('list').innerHTML = l.length ? l.map((r) => '<div class="t"><h3>' + e(r.tienda) + ' <span class="pill ' + e(r.estado) + '">' + e(r.estado) + '</span></h3>'
@@ -27,6 +42,6 @@ function show(l) {
     + '<button class="ok" onclick="act(\'' + r.id + '\',\'aprobar\')">Aprobar</button><button class="no" onclick="act(\'' + r.id + '\',\'rechazar\')">Rechazar</button><button class="gr" onclick="act(\'' + r.id + '\',\'desactivar\')">Desactivar</button></div></div>').join('')
     : '<p>No hay solicitudes todavía.</p>'
 }
-async function act(id, accion) { try { await call('/admin/accion', { id, accion, vence: document.getElementById('v' + id).value, notas: document.getElementById('n' + id).value }); show(await call('/admin/lista')) } catch (e) { err(e.message) } }
+async function act(id, accion) { document.getElementById('err').hidden = true; try { await call('/admin/accion', { id, accion, vence: document.getElementById('v' + id).value, notas: document.getElementById('n' + id).value }); show(await call('/admin/lista')) } catch (e) { err(e.message) } }
 if (pw) go()
 </script></main></body></html>
